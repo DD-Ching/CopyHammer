@@ -652,6 +652,104 @@ local function addToHistory(text)
   end
 end
 
+-- Capture clipboard changes reliably:
+-- - Retry reading text a few times (some apps update pasteboard content asynchronously)
+-- - Don't advance lastChangeCount until we either captured text or gave up
+local captureState = { changeCount = nil, retriesLeft = 0, timer = nil, callbacks = {} }
+
+local function stopCaptureTimer()
+  if captureState.timer then
+    captureState.timer:stop()
+    captureState.timer = nil
+  end
+end
+
+local function completeCapture(ok)
+  stopCaptureTimer()
+
+  local callbacks = captureState.callbacks
+  captureState.changeCount = nil
+  captureState.retriesLeft = 0
+  captureState.callbacks = {}
+
+  for _, cb in ipairs(callbacks) do
+    pcall(cb, ok)
+  end
+end
+
+local function readPasteboardText()
+  local s = hs.pasteboard.getContents()
+  if type(s) == "string" and s ~= "" then
+    return s
+  end
+  return nil
+end
+
+local function attemptCapture()
+  local text = readPasteboardText()
+  if text then
+    addToHistory(text)
+    lastChangeCount = captureState.changeCount or lastChangeCount
+    completeCapture(true)
+    return
+  end
+
+  captureState.retriesLeft = captureState.retriesLeft - 1
+  if captureState.retriesLeft <= 0 then
+    lastChangeCount = captureState.changeCount or lastChangeCount
+    completeCapture(false)
+    return
+  end
+
+  captureState.timer = hs.timer.doAfter(0.06, attemptCapture)
+end
+
+local function captureChange(changeCount, cb)
+  if type(changeCount) ~= "number" then
+    if cb then
+      cb(false)
+    end
+    return
+  end
+
+  if changeCount == lastChangeCount then
+    if cb then
+      cb(true)
+    end
+    return
+  end
+
+  if captureState.changeCount == changeCount and captureState.timer then
+    if cb then
+      table.insert(captureState.callbacks, cb)
+    end
+    return
+  end
+
+  -- New clipboard update arrived; cancel any older in-flight capture.
+  if captureState.changeCount ~= nil then
+    if #captureState.callbacks > 0 then
+      completeCapture(false)
+    else
+      stopCaptureTimer()
+      captureState.changeCount = nil
+      captureState.retriesLeft = 0
+    end
+  end
+
+  captureState.changeCount = changeCount
+  captureState.retriesLeft = 10 -- ~0.6s worst-case, only on changes
+  captureState.callbacks = {}
+  if cb then
+    table.insert(captureState.callbacks, cb)
+  end
+  attemptCapture()
+end
+
+local function captureLatest(cb)
+  captureChange(hs.pasteboard.changeCount(), cb)
+end
+
 -- Normalize preview to one line and truncate to configured length
 local function preview(text)
   local s = text:sub(1, config.previewChars):gsub("[%c]+", " "):gsub("%s+", " ")
@@ -659,6 +757,18 @@ local function preview(text)
     return s .. "..."
   end
   return s
+end
+
+local function buildHistoryChoices()
+  local choices = {}
+  for i, item in ipairs(history) do
+    table.insert(choices, {
+      text = preview(item),
+      subText = string.format("#%d  %d chars%s", i, #item, chooserMode == "delete" and "  (click to delete)" or ""),
+      full = item,
+    })
+  end
+  return choices
 end
 
 local function openChooser(mode)
@@ -672,6 +782,19 @@ local function openChooser(mode)
       if chooserMode == "delete" then
         removeOneItem(choice.full)
         return
+      end
+
+      -- Backup current clipboard (text only) before overwriting, so nothing "disappears".
+      local current = readPasteboardText()
+      if not current then
+        hs.alert.show(
+          "CopyHammer: current clipboard isn't text; can't back it up",
+          { atScreenEdge = config.helpOverlayEdge, textSize = 12 },
+          hs.screen.mainScreen(),
+          1.2
+        )
+      elseif current ~= choice.full then
+        addToHistory(current)
       end
 
       hs.pasteboard.setContents(choice.full)
@@ -692,24 +815,20 @@ local function openChooser(mode)
   chooserMode = mode or "paste"
   lastFocusedApp = hs.application.frontmostApplication()
 
-  local choices = {}
-  for i, item in ipairs(history) do
-    table.insert(choices, {
-      text = preview(item),
-      subText = string.format("#%d  %d chars%s", i, #item, chooserMode == "delete" and "  (click to delete)" or ""),
-      full = item,
-    })
-  end
-
   local placeholder = chooserMode == "delete" and "Delete mode: pick an item to remove" or "Clipboard history"
   chooser:placeholderText(placeholder)
-  chooser:choices(choices)
+  chooser:choices(buildHistoryChoices())
   setUIVisible(true)
   chooser:show(chooserPoint(config.chooserWidth))
   printMemoryUsage()
 end
 
 local function showChooser()
+  captureLatest(function()
+    if chooser then
+      chooser:choices(buildHistoryChoices())
+    end
+  end)
   openChooser("paste")
   showUsageHint("history")
 end
@@ -1100,9 +1219,7 @@ local function startClipboardMonitor()
     if current == lastChangeCount then
       return
     end
-
-    lastChangeCount = current
-    addToHistory(hs.pasteboard.getContents())
+    captureChange(current)
   end)
 end
 
