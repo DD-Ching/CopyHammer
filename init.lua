@@ -10,9 +10,14 @@ local config = {
   chooserWidth = 42,
   chooserRows = 12,
   chooserMargin = 16,
-  showHelpOverlay = true,
+  showHelpOverlay = false,
   helpOverlaySeconds = 2.4,
   helpOverlayEdge = 1,
+  showStatusPanel = true,
+  statusPanelWidth = 420,
+  statusPanelHeight = 206,
+  statusPanelMargin = 16,
+  statusPanelPosition = "bottomRight", -- bottomRight | topRight
   historyFile = os.getenv("HOME") .. "/.hammerspoon/clipboard.json",
   hotkeyFile = os.getenv("HOME") .. "/.hammerspoon/clipboard_hotkeys.json",
 }
@@ -24,6 +29,7 @@ local defaultHotkeys = {
   copyAll = "cmd+ctrl+shift+c",
   clearAll = "cmd+shift+delete",
   hotkeyConfig = "cmd+shift+k",
+  togglePanel = "cmd+shift+h",
 }
 
 local history = {}
@@ -42,6 +48,9 @@ local bindHotkeys
 local showHotkeyChooser
 local hotkeyCaptureTap
 local activeHelpAlertId
+local statusPanel
+local screenWatcher
+local updateStatusPanel
 
 -- Sum of characters across stored entries (approx memory usage)
 local function totalChars()
@@ -85,6 +94,80 @@ local function historyFileSize()
     return attr.size
   end
   return 0
+end
+
+local function statusPanelFrame()
+  local screenFrame = hs.screen.mainScreen():frame()
+  local w = config.statusPanelWidth
+  local h = config.statusPanelHeight
+  local x = screenFrame.x + screenFrame.w - w - config.statusPanelMargin
+  local y = screenFrame.y + screenFrame.h - h - config.statusPanelMargin
+
+  if config.statusPanelPosition == "topRight" then
+    y = screenFrame.y + config.statusPanelMargin
+  end
+
+  return { x = x, y = y, w = w, h = h }
+end
+
+local function statusPanelText()
+  return table.concat({
+    "CopyHammer",
+    string.format("History: %d items | %s file | %d chars", #history, formatBytes(historyFileSize()), totalChars()),
+    "",
+    "Current Hotkeys",
+    string.format("History: %s", hotkeys.openHistory or "-"),
+    string.format("Actions: %s", hotkeys.openActions or "-"),
+    string.format("Delete One: %s", hotkeys.deleteMode or "-"),
+    string.format("Copy All: %s", hotkeys.copyAll or "-"),
+    string.format("Clear All: %s", hotkeys.clearAll or "-"),
+    string.format("Hotkey Settings: %s", hotkeys.hotkeyConfig or "-"),
+    string.format("Toggle Panel: %s", hotkeys.togglePanel or "-"),
+  }, "\n")
+end
+
+local function ensureStatusPanel()
+  if not config.showStatusPanel then
+    if statusPanel then
+      statusPanel:hide()
+    end
+    return
+  end
+
+  local frame = statusPanelFrame()
+  if not statusPanel then
+    statusPanel = hs.canvas.new(frame)
+    statusPanel:level(hs.canvas.windowLevels.floating)
+    statusPanel:behaviorAsLabels({ "canJoinAllSpaces", "stationary" })
+    statusPanel[1] = {
+      type = "rectangle",
+      action = "fill",
+      roundedRectRadii = { xRadius = 10, yRadius = 10 },
+      fillColor = { white = 0, alpha = 0.72 },
+    }
+    statusPanel[2] = {
+      type = "rectangle",
+      action = "stroke",
+      roundedRectRadii = { xRadius = 10, yRadius = 10 },
+      strokeColor = { white = 1, alpha = 0.18 },
+      strokeWidth = 1,
+    }
+    statusPanel[3] = {
+      type = "text",
+      frame = { x = 12, y = 10, w = frame.w - 24, h = frame.h - 20 },
+      text = "",
+      textSize = 12,
+      textColor = { white = 1, alpha = 0.95 },
+      textFont = ".AppleSystemUIFont",
+      textAlignment = "left",
+      textLineBreak = "wordWrap",
+    }
+  end
+
+  statusPanel:frame(frame)
+  statusPanel[3].frame = { x = 12, y = 10, w = frame.w - 24, h = frame.h - 20 }
+  statusPanel[3].text = statusPanelText()
+  statusPanel:show()
 end
 
 local function showHelpOverlay(text)
@@ -283,6 +366,46 @@ local function specFromFlagsAndKey(flags, key)
   return table.concat(parts, "+")
 end
 
+local function actionTitle(actionId)
+  local titles = {
+    openHistory = "Open History",
+    openActions = "Open Actions Window",
+    deleteMode = "Delete One",
+    copyAll = "Copy All",
+    clearAll = "Clear All",
+    hotkeyConfig = "Hotkey Settings",
+    togglePanel = "Toggle Panel",
+  }
+  return titles[actionId] or actionId
+end
+
+local function sanitizeHotkeys()
+  local used = {}
+  local changed = false
+
+  for actionId, defaultSpec in pairs(defaultHotkeys) do
+    local current = hotkeys[actionId]
+    local _, _, err, normalized = parseHotkeySpec(current or "")
+    if err then
+      hotkeys[actionId] = defaultSpec
+      current = defaultSpec
+      _, _, _, normalized = parseHotkeySpec(current)
+      changed = true
+    else
+      hotkeys[actionId] = normalized
+    end
+
+    local owner = used[hotkeys[actionId]]
+    if owner then
+      hotkeys[actionId] = defaultSpec
+      changed = true
+    end
+    used[hotkeys[actionId]] = actionId
+  end
+
+  return changed
+end
+
 local function loadHotkeys()
   hotkeys = {}
   for k, v in pairs(defaultHotkeys) do
@@ -310,6 +433,10 @@ local function loadHotkeys()
       end
     end
   end
+
+  if sanitizeHotkeys() then
+    saveHotkeys()
+  end
 end
 
 -- Manual clear function (also exposed globally for console use)
@@ -320,6 +447,9 @@ local function clearHistory(reason)
   printMemoryUsage()
   if updateMenuBar then
     updateMenuBar()
+  end
+  if updateStatusPanel then
+    updateStatusPanel()
   end
 end
 
@@ -332,6 +462,9 @@ local function removeOneItem(text)
       printMemoryUsage()
       if updateMenuBar then
         updateMenuBar()
+      end
+      if updateStatusPanel then
+        updateStatusPanel()
       end
       return true
     end
@@ -349,6 +482,17 @@ local function copyAllHistory()
   hs.printf("Clipboard history: copied all %d items (%d chars)", #history, #merged)
 end
 
+local function resetHotkeysToDefault()
+  for k, v in pairs(defaultHotkeys) do
+    hotkeys[k] = v
+  end
+  saveHotkeys()
+  if bindHotkeys then
+    bindHotkeys()
+  end
+  hs.alert.show("Hotkeys reset to defaults")
+end
+
 -- Exposed helpers in Hammerspoon console:
 --   clearClipboardHistory()
 --   showClipboardMemoryUsage()
@@ -356,6 +500,14 @@ end
 _G.clearClipboardHistory = clearHistory
 _G.showClipboardMemoryUsage = printMemoryUsage
 _G.copyAllClipboardHistory = copyAllHistory
+_G.resetClipboardHotkeys = resetHotkeysToDefault
+_G.toggleClipboardStatusPanel = function()
+  config.showStatusPanel = not config.showStatusPanel
+  if updateStatusPanel then
+    updateStatusPanel()
+  end
+  hs.printf("Clipboard status panel: %s", config.showStatusPanel and "ON" or "OFF")
+end
 _G.toggleClipboardAutoLaunch = function()
   if setAutoLaunch(not getAutoLaunch()) then
     if updateMenuBar then
@@ -425,6 +577,9 @@ local function addToHistory(text)
   printMemoryUsage()
   if updateMenuBar then
     updateMenuBar()
+  end
+  if updateStatusPanel then
+    updateStatusPanel()
   end
 end
 
@@ -534,6 +689,7 @@ local hotkeyMeta = {
   { id = "copyAll", title = "Copy All Items", help = "Copy all saved entries" },
   { id = "clearAll", title = "Clear All Items", help = "Clear whole history" },
   { id = "hotkeyConfig", title = "Hotkey Settings", help = "Open hotkey config" },
+  { id = "togglePanel", title = "Toggle Status Panel", help = "Show/hide persistent panel" },
 }
 
 local function findHotkeyMeta(id)
@@ -587,9 +743,24 @@ local function startHotkeyCapture(actionId)
       return true
     end
 
+    for otherAction, otherSpec in pairs(hotkeys) do
+      if otherAction ~= actionId and otherSpec == normalized then
+        hs.alert.show(
+          string.format("Already used by %s", actionTitle(otherAction)),
+          { atScreenEdge = config.helpOverlayEdge, textSize = 12 },
+          hs.screen.mainScreen(),
+          1.2
+        )
+        return true
+      end
+    end
+
     hotkeys[actionId] = normalized
     saveHotkeys()
     bindHotkeys()
+    if updateStatusPanel then
+      updateStatusPanel()
+    end
     stopHotkeyCapture()
     hs.alert.show(meta.title .. ": " .. normalized, { atScreenEdge = config.helpOverlayEdge, textSize = 12 }, hs.screen.mainScreen(), 1.2)
     hs.timer.doAfter(0.03, showHotkeyChooser)
@@ -607,12 +778,7 @@ showHotkeyChooser = function()
       end
 
       if choice.action == "restore_defaults" then
-        for k, v in pairs(defaultHotkeys) do
-          hotkeys[k] = v
-        end
-        saveHotkeys()
-        bindHotkeys()
-        hs.alert.show("Hotkeys restored")
+        resetHotkeysToDefault()
         hs.timer.doAfter(0.03, showHotkeyChooser)
       else
         startHotkeyCapture(choice.id)
@@ -649,9 +815,16 @@ local actionHandlers = {
   copyAll = copyAllHistory,
   clearAll = function() clearHistory("manual clear hotkey") end,
   hotkeyConfig = showHotkeyChooser,
+  togglePanel = function()
+    _G.toggleClipboardStatusPanel()
+  end,
 }
 
 bindHotkeys = function()
+  if sanitizeHotkeys() then
+    saveHotkeys()
+  end
+
   for _, h in pairs(boundHotkeys) do
     h:delete()
   end
@@ -668,6 +841,18 @@ bindHotkeys = function()
       end
     end
   end
+
+  if not boundHotkeys.openHistory then
+    local mods, key = parseHotkeySpec(defaultHotkeys.openHistory)
+    boundHotkeys.openHistory = hs.hotkey.bind(mods, key, showChooser)
+    hotkeys.openHistory = defaultHotkeys.openHistory
+    saveHotkeys()
+    hs.printf("Clipboard history: restored emergency history hotkey %s", defaultHotkeys.openHistory)
+  end
+
+  if updateStatusPanel then
+    updateStatusPanel()
+  end
 end
 
 updateMenuBar = function()
@@ -675,6 +860,10 @@ updateMenuBar = function()
     return
   end
   menubar:setTitle(formatBytes(historyFileSize()))
+end
+
+updateStatusPanel = function()
+  ensureStatusPanel()
 end
 
 local function setupMenubar()
@@ -704,6 +893,34 @@ local function setupMenubar()
         { title = string.format("Open History (%s)", hotkeys.openHistory), fn = showChooser },
         { title = string.format("Open Actions Window (%s)", hotkeys.openActions), fn = showActionChooser },
         { title = string.format("Hotkey Settings (%s)", hotkeys.hotkeyConfig), fn = showHotkeyChooser },
+        { title = "Reset Hotkeys to Default", fn = resetHotkeysToDefault },
+        { title = "-" },
+        {
+          title = "Status Panel (Bottom Right)",
+          checked = config.showStatusPanel and config.statusPanelPosition == "bottomRight",
+          fn = function()
+            config.showStatusPanel = true
+            config.statusPanelPosition = "bottomRight"
+            updateStatusPanel()
+          end,
+        },
+        {
+          title = "Status Panel (Top Right)",
+          checked = config.showStatusPanel and config.statusPanelPosition == "topRight",
+          fn = function()
+            config.showStatusPanel = true
+            config.statusPanelPosition = "topRight"
+            updateStatusPanel()
+          end,
+        },
+        {
+          title = "Hide Status Panel",
+          checked = not config.showStatusPanel,
+          fn = function()
+            config.showStatusPanel = false
+            updateStatusPanel()
+          end,
+        },
         { title = "-" },
         {
           title = "Help Overlay (Top)",
@@ -757,6 +974,18 @@ local function setupMenubar()
   updateMenuBar()
 end
 
+local function setupStatusPanel()
+  updateStatusPanel()
+  if not screenWatcher then
+    screenWatcher = hs.screen.watcher.new(function()
+      if updateStatusPanel then
+        updateStatusPanel()
+      end
+    end)
+    screenWatcher:start()
+  end
+end
+
 -- Idle-efficient polling using pasteboard changeCount
 local function startClipboardMonitor()
   hs.timer.doEvery(config.pollInterval, function()
@@ -773,13 +1002,15 @@ end
 loadHistory()
 loadHotkeys()
 setupMenubar()
+setupStatusPanel()
 startClipboardMonitor()
 bindHotkeys()
 
 hs.printf(
-  "Clipboard history ready. Hotkeys: %s (history), %s (actions), %s (hotkey settings)",
+  "Clipboard history ready. Hotkeys: %s (history), %s (actions), %s (hotkey settings), %s (toggle panel)",
   hotkeys.openHistory,
   hotkeys.openActions,
-  hotkeys.hotkeyConfig
+  hotkeys.hotkeyConfig,
+  hotkeys.togglePanel
 )
 printMemoryUsage()

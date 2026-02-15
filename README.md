@@ -26,6 +26,9 @@ brew install --cask hammerspoon
 - Chooser opens near top-right corner
 - Separate **Actions window** (not mixed into clipboard item rows)
 - Separate **Hotkey settings window** (press combo to record, persisted)
+- Persistent **Status Panel** in right corner (always visible, non-disappearing)
+- Auto-fallback if hotkey settings are invalid
+- Hotkey duplicate prevention
 - One-item delete mode
 - Clear-all action
 - Copy-all action
@@ -40,6 +43,7 @@ brew install --cask hammerspoon
 - `cmd + ctrl + shift + c`: Copy all history items
 - `cmd + shift + delete`: Clear all history
 - `cmd + shift + k`: Open hotkey settings window
+- `cmd + shift + h`: Toggle persistent status panel
 
 ## Install
 
@@ -87,6 +91,11 @@ Custom hotkeys are stored at:
 
 - `~/.hammerspoon/clipboard_hotkeys.json`
 
+If hotkeys become confusing:
+
+- Use `OPT` menu -> `Reset Hotkeys to Default`
+- Or run in Hammerspoon console: `resetClipboardHotkeys()`
+
 ## Help Overlay
 
 `OPT` menu includes:
@@ -94,6 +103,20 @@ Custom hotkeys are stored at:
 - `Help Overlay (Top)`
 - `Help Overlay (Bottom)`
 - `Disable Help Overlay`
+
+## Persistent Status Panel
+
+`OPT` menu includes:
+
+- `Status Panel (Bottom Right)`
+- `Status Panel (Top Right)`
+- `Hide Status Panel`
+
+Console helper:
+
+```lua
+toggleClipboardStatusPanel()
+```
 
 ## Manual Console Commands
 
