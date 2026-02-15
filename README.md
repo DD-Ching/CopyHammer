@@ -25,11 +25,12 @@ brew install --cask hammerspoon
 - Click size indicator to open clipboard chooser
 - Chooser opens near top-right corner
 - Separate **Actions window** (not mixed into clipboard item rows)
-- Separate **Hotkey settings window** (custom hotkeys, persisted)
+- Separate **Hotkey settings window** (press combo to record, persisted)
 - One-item delete mode
 - Clear-all action
 - Copy-all action
 - Optional auto-paste after selecting an item
+- Optional lightweight help overlay (top/bottom edge)
 
 ## Default Hotkeys
 
@@ -73,17 +74,26 @@ Use the `OPT` menubar item -> `Launch Hammerspoon at Login`.
 
 ## Hotkey Customization
 
-Open hotkey settings window (`cmd + shift + k`) and enter keys in format:
+Open hotkey settings window (`cmd + shift + k`), pick an action, then press your desired key combo directly.
+Examples:
 
 ```text
 cmd+shift+v
 cmd+ctrl+shift+c
-alt+v
+cmd+alt+v
 ```
 
 Custom hotkeys are stored at:
 
 - `~/.hammerspoon/clipboard_hotkeys.json`
+
+## Help Overlay
+
+`OPT` menu includes:
+
+- `Help Overlay (Top)`
+- `Help Overlay (Bottom)`
+- `Disable Help Overlay`
 
 ## Manual Console Commands
 
@@ -109,4 +119,3 @@ Edit `~/.hammerspoon/clipboard_winv.lua`:
 - `chooserWidth`
 - `chooserRows`
 - `chooserMargin`
-

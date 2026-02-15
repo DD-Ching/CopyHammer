@@ -10,6 +10,9 @@ local config = {
   chooserWidth = 42,
   chooserRows = 12,
   chooserMargin = 16,
+  showHelpOverlay = true,
+  helpOverlaySeconds = 2.4,
+  helpOverlayEdge = 1,
   historyFile = os.getenv("HOME") .. "/.hammerspoon/clipboard.json",
   hotkeyFile = os.getenv("HOME") .. "/.hammerspoon/clipboard_hotkeys.json",
 }
@@ -37,6 +40,8 @@ local hotkeys = {}
 local boundHotkeys = {}
 local bindHotkeys
 local showHotkeyChooser
+local hotkeyCaptureTap
+local activeHelpAlertId
 
 -- Sum of characters across stored entries (approx memory usage)
 local function totalChars()
@@ -80,6 +85,58 @@ local function historyFileSize()
     return attr.size
   end
   return 0
+end
+
+local function showHelpOverlay(text)
+  if not config.showHelpOverlay then
+    return
+  end
+
+  if activeHelpAlertId then
+    hs.alert.closeSpecific(activeHelpAlertId, 0)
+    activeHelpAlertId = nil
+  end
+
+  activeHelpAlertId = hs.alert.show(
+    text,
+    {
+      textSize = 12,
+      radius = 8,
+      padding = 10,
+      fillColor = { white = 0, alpha = 0.75 },
+      strokeColor = { white = 1, alpha = 0.15 },
+      strokeWidth = 1,
+      textColor = { white = 1, alpha = 0.95 },
+      atScreenEdge = config.helpOverlayEdge,
+      fadeInDuration = 0.08,
+      fadeOutDuration = 0.12,
+    },
+    hs.screen.mainScreen(),
+    config.helpOverlaySeconds
+  )
+end
+
+local function showUsageHint(context)
+  if context == "history" then
+    showHelpOverlay(string.format(
+      "History: %s  |  Actions: %s  |  Hotkeys: %s",
+      hotkeys.openHistory,
+      hotkeys.openActions,
+      hotkeys.hotkeyConfig
+    ))
+  elseif context == "actions" then
+    showHelpOverlay(string.format(
+      "Actions: %s  |  Delete: %s  |  Copy All: %s  |  Clear: %s",
+      hotkeys.openActions,
+      hotkeys.deleteMode,
+      hotkeys.copyAll,
+      hotkeys.clearAll
+    ))
+  elseif context == "delete" then
+    showHelpOverlay("Delete mode: click one item to remove")
+  elseif context == "hotkeys" then
+    showHelpOverlay("Select one action, then press your new key combo")
+  end
 end
 
 local function chooserPoint(widthPercent)
@@ -152,6 +209,23 @@ local modAlias = {
   control = "ctrl",
   ctl = "ctrl",
 }
+local modifierLikeKeyNames = {
+  command = true,
+  rightcommand = true,
+  leftcommand = true,
+  shift = true,
+  rightshift = true,
+  leftshift = true,
+  control = true,
+  rightcontrol = true,
+  leftcontrol = true,
+  alt = true,
+  option = true,
+  rightoption = true,
+  leftoption = true,
+  function = true,
+  fn = true,
+}
 
 local function parseHotkeySpec(spec)
   if type(spec) ~= "string" then
@@ -196,6 +270,17 @@ local function parseHotkeySpec(spec)
   table.insert(parts, key)
 
   return mods, key, nil, table.concat(parts, "+")
+end
+
+local function specFromFlagsAndKey(flags, key)
+  local parts = {}
+  for _, m in ipairs(modOrder) do
+    if flags[m] then
+      table.insert(parts, m)
+    end
+  end
+  table.insert(parts, key)
+  return table.concat(parts, "+")
 end
 
 local function loadHotkeys()
@@ -400,10 +485,12 @@ end
 
 local function showChooser()
   openChooser("paste")
+  showUsageHint("history")
 end
 
 local function showDeleteChooser()
   openChooser("delete")
+  showUsageHint("delete")
 end
 
 local function showActionChooser()
@@ -437,6 +524,7 @@ local function showActionChooser()
     { text = "Configure Hotkeys...", subText = "Open hotkey settings window", action = "open_hotkeys" },
   })
   actionChooser:show(chooserPoint(config.chooserWidth))
+  showUsageHint("actions")
 end
 
 local hotkeyMeta = {
@@ -457,6 +545,60 @@ local function findHotkeyMeta(id)
   return nil
 end
 
+local function stopHotkeyCapture()
+  if hotkeyCaptureTap then
+    hotkeyCaptureTap:stop()
+    hotkeyCaptureTap = nil
+  end
+end
+
+local function startHotkeyCapture(actionId)
+  local meta = findHotkeyMeta(actionId)
+  if not meta then
+    return
+  end
+
+  stopHotkeyCapture()
+  showHelpOverlay(string.format("%s: press new hotkey now (ESC to cancel)", meta.title))
+
+  hotkeyCaptureTap = hs.eventtap.new({ hs.eventtap.event.types.keyDown }, function(event)
+    local keyName = hs.keycodes.map[event:getKeyCode()]
+    if type(keyName) ~= "string" then
+      return false
+    end
+
+    keyName = keyName:lower()
+    if keyName == "escape" then
+      stopHotkeyCapture()
+      hs.alert.show("Hotkey update cancelled", { atScreenEdge = config.helpOverlayEdge, textSize = 12 }, hs.screen.mainScreen(), 1.0)
+      hs.timer.doAfter(0.03, showHotkeyChooser)
+      return true
+    end
+
+    if modifierLikeKeyNames[keyName] then
+      return true
+    end
+
+    local flags = event:getFlags()
+    local spec = specFromFlagsAndKey(flags, keyName)
+    local _, _, err, normalized = parseHotkeySpec(spec)
+    if err then
+      hs.alert.show("Invalid hotkey: " .. err, { atScreenEdge = config.helpOverlayEdge, textSize = 12 }, hs.screen.mainScreen(), 1.2)
+      return true
+    end
+
+    hotkeys[actionId] = normalized
+    saveHotkeys()
+    bindHotkeys()
+    stopHotkeyCapture()
+    hs.alert.show(meta.title .. ": " .. normalized, { atScreenEdge = config.helpOverlayEdge, textSize = 12 }, hs.screen.mainScreen(), 1.2)
+    hs.timer.doAfter(0.03, showHotkeyChooser)
+    return true
+  end)
+
+  hotkeyCaptureTap:start()
+end
+
 showHotkeyChooser = function()
   if not hotkeyChooser then
     hotkeyChooser = hs.chooser.new(function(choice)
@@ -471,32 +613,10 @@ showHotkeyChooser = function()
         saveHotkeys()
         bindHotkeys()
         hs.alert.show("Hotkeys restored")
+        hs.timer.doAfter(0.03, showHotkeyChooser)
       else
-        local meta = findHotkeyMeta(choice.id)
-        if not meta then
-          return
-        end
-        local button, value = hs.dialog.textPrompt(
-          "Set Hotkey",
-          string.format("%s\nFormat: cmd+shift+v", meta.title),
-          hotkeys[choice.id],
-          "Save",
-          "Cancel"
-        )
-        if button == "Save" then
-          local _, _, err, normalized = parseHotkeySpec(value)
-          if err then
-            hs.alert.show("Invalid hotkey: " .. err)
-          else
-            hotkeys[choice.id] = normalized
-            saveHotkeys()
-            bindHotkeys()
-            hs.alert.show(meta.title .. ": " .. normalized)
-          end
-        end
+        startHotkeyCapture(choice.id)
       end
-
-      hs.timer.doAfter(0.03, showHotkeyChooser)
     end)
     hotkeyChooser:width(config.chooserWidth)
     hotkeyChooser:rows(10)
@@ -519,6 +639,7 @@ showHotkeyChooser = function()
   hotkeyChooser:placeholderText("Hotkey settings")
   hotkeyChooser:choices(choices)
   hotkeyChooser:show(chooserPoint(config.chooserWidth))
+  showUsageHint("hotkeys")
 end
 
 local actionHandlers = {
@@ -583,6 +704,36 @@ local function setupMenubar()
         { title = string.format("Open History (%s)", hotkeys.openHistory), fn = showChooser },
         { title = string.format("Open Actions Window (%s)", hotkeys.openActions), fn = showActionChooser },
         { title = string.format("Hotkey Settings (%s)", hotkeys.hotkeyConfig), fn = showHotkeyChooser },
+        { title = "-" },
+        {
+          title = "Help Overlay (Top)",
+          checked = config.showHelpOverlay and config.helpOverlayEdge == 1,
+          fn = function()
+            config.showHelpOverlay = true
+            config.helpOverlayEdge = 1
+            showHelpOverlay("Help overlay position: top")
+          end,
+        },
+        {
+          title = "Help Overlay (Bottom)",
+          checked = config.showHelpOverlay and config.helpOverlayEdge == 2,
+          fn = function()
+            config.showHelpOverlay = true
+            config.helpOverlayEdge = 2
+            showHelpOverlay("Help overlay position: bottom")
+          end,
+        },
+        {
+          title = "Disable Help Overlay",
+          checked = not config.showHelpOverlay,
+          fn = function()
+            config.showHelpOverlay = false
+            if activeHelpAlertId then
+              hs.alert.closeSpecific(activeHelpAlertId, 0)
+              activeHelpAlertId = nil
+            end
+          end,
+        },
         { title = "-" },
         { title = string.format("Delete One Item (%s)", hotkeys.deleteMode), fn = showDeleteChooser },
         { title = string.format("Copy All Items (%s)", hotkeys.copyAll), fn = copyAllHistory },
