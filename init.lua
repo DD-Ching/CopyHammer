@@ -7,7 +7,7 @@ local config = {
   previewChars = 80,
   autoPasteOnSelect = true,
   showMenubarUsage = true,
-  showChooserActions = true,
+  showChooserActions = false,
   historyFile = os.getenv("HOME") .. "/.hammerspoon/clipboard.json",
 }
 

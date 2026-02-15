@@ -36,11 +36,8 @@ brew install --cask hammerspoon
 - `cmd + ctrl + shift + c`: Copy all history items
 - `cmd + shift + delete`: Clear all history
 
-Inside chooser (`cmd + shift + v`), top actions are:
-
-- `Copy All Items`
-- `Clear All Items`
-- `Delete One Item...`
+Chooser top action rows are disabled by default (for a cleaner list-only view).
+If needed, set `showChooserActions = true` in config.
 
 ## Install
 
