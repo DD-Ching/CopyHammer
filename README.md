@@ -42,7 +42,13 @@ Inside chooser (`cmd + shift + v`), top actions are:
 
 ## Install
 
-Clone this repo and run:
+One-line install:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/DD-Ching/CopyHammer/main/install.sh)"
+```
+
+Or clone this repo and run:
 
 ```bash
 ./install.sh
@@ -87,4 +93,3 @@ Edit `~/.hammerspoon/clipboard_winv.lua`:
 - `autoPasteOnSelect`
 - `showMenubarUsage`
 - `showChooserActions`
-

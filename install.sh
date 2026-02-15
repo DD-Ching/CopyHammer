@@ -6,6 +6,8 @@ HAM_DIR="$HOME/.hammerspoon"
 TARGET_MODULE="$HAM_DIR/clipboard_winv.lua"
 INIT_FILE="$HAM_DIR/init.lua"
 REQUIRE_LINE='require("clipboard_winv")'
+LOCAL_MODULE="$ROOT_DIR/clipboard_winv.lua"
+REMOTE_MODULE_URL="https://raw.githubusercontent.com/DD-Ching/CopyHammer/main/clipboard_winv.lua"
 
 if [[ ! -d "/Applications/Hammerspoon.app" && ! -d "$HOME/Applications/Hammerspoon.app" ]]; then
   echo "Hammerspoon is not installed."
@@ -14,7 +16,14 @@ if [[ ! -d "/Applications/Hammerspoon.app" && ! -d "$HOME/Applications/Hammerspo
 fi
 
 mkdir -p "$HAM_DIR"
-cp "$ROOT_DIR/clipboard_winv.lua" "$TARGET_MODULE"
+if [[ -f "$LOCAL_MODULE" ]]; then
+  cp "$LOCAL_MODULE" "$TARGET_MODULE"
+elif command -v curl >/dev/null 2>&1; then
+  curl -fsSL "$REMOTE_MODULE_URL" -o "$TARGET_MODULE"
+else
+  echo "clipboard_winv.lua not found locally and curl is unavailable."
+  exit 1
+fi
 
 if [[ ! -f "$INIT_FILE" ]]; then
   printf "%s\n" "$REQUIRE_LINE" > "$INIT_FILE"
