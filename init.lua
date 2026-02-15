@@ -17,6 +17,7 @@ local lastChangeCount = hs.pasteboard.changeCount()
 local lastFocusedApp
 local chooserMode = "paste"
 local menubar
+local menuButton
 local updateMenuBar
 
 -- Sum of characters across stored entries (approx memory usage)
@@ -40,6 +41,27 @@ local function formatChars(n)
     return string.format("%.1fK", n / 1000)
   end
   return tostring(n)
+end
+
+local function formatBytes(n)
+  if n >= 1024 * 1024 * 1024 then
+    return string.format("%.1fGB", n / (1024 * 1024 * 1024))
+  end
+  if n >= 1024 * 1024 then
+    return string.format("%.1fMB", n / (1024 * 1024))
+  end
+  if n >= 1024 then
+    return string.format("%.1fKB", n / 1024)
+  end
+  return string.format("%dB", n)
+end
+
+local function historyFileSize()
+  local attr = hs.fs.attributes(config.historyFile)
+  if type(attr) == "table" and type(attr.size) == "number" then
+    return attr.size
+  end
+  return 0
 end
 
 local function canUseAutoLaunch()
@@ -271,7 +293,8 @@ local function openChooser(mode)
     })
   end
 
-  chooser:placeholderText(chooserMode == "delete" and "Delete mode: pick an item to remove" or "Clipboard history")
+  local placeholder = chooserMode == "delete" and "Delete mode: pick an item to remove" or "Clipboard history"
+  chooser:placeholderText(placeholder)
   chooser:choices(choices)
   chooser:show()
   printMemoryUsage()
@@ -289,7 +312,7 @@ updateMenuBar = function()
   if not menubar then
     return
   end
-  menubar:setTitle(string.format("CB %s/%d", formatChars(totalChars()), #history))
+  menubar:setTitle(formatBytes(historyFileSize()))
 end
 
 local function setupMenubar()
@@ -302,30 +325,38 @@ local function setupMenubar()
     return
   end
 
-  menubar:setTooltip("Clipboard history")
-  menubar:setMenu(function()
-    return {
-      { title = string.format("Memory: %d chars", totalChars()), disabled = true },
-      { title = string.format("Items: %d/%d", #history, config.maxItems), disabled = true },
-      { title = "-" },
-      { title = "Open History (cmd+shift+v)", fn = showChooser },
-      { title = "Delete One Item (cmd+ctrl+shift+v)", fn = showDeleteChooser },
-      { title = "Copy All Items (cmd+ctrl+shift+c)", fn = copyAllHistory },
-      { title = "Clear All (cmd+shift+delete)", fn = function() clearHistory("manual clear") end },
-      { title = "-" },
-      {
-        title = "Launch Hammerspoon at Login",
-        checked = getAutoLaunch(),
-        disabled = not canUseAutoLaunch(),
-        fn = function()
-          if setAutoLaunch(not getAutoLaunch()) then
-            hs.printf("Hammerspoon auto launch: %s", getAutoLaunch() and "ON" or "OFF")
-            updateMenuBar()
-          end
-        end,
-      },
-    }
-  end)
+  menubar:setTooltip("Clipboard history (click to open)")
+  menubar:setClickCallback(showChooser)
+
+  menuButton = hs.menubar.new()
+  if menuButton then
+    menuButton:setTitle("OPT")
+    menuButton:setTooltip("Clipboard settings")
+    menuButton:setMenu(function()
+      return {
+        { title = string.format("File: %s", formatBytes(historyFileSize())), disabled = true },
+        { title = string.format("Memory: %d chars (~%s)", totalChars(), formatChars(totalChars())), disabled = true },
+        { title = string.format("Items: %d/%d", #history, config.maxItems), disabled = true },
+        { title = "-" },
+        { title = "Open History (cmd+shift+v)", fn = showChooser },
+        { title = "Delete One Item (cmd+ctrl+shift+v)", fn = showDeleteChooser },
+        { title = "Copy All Items (cmd+ctrl+shift+c)", fn = copyAllHistory },
+        { title = "Clear All (cmd+shift+delete)", fn = function() clearHistory("manual clear") end },
+        { title = "-" },
+        {
+          title = "Launch Hammerspoon at Login",
+          checked = getAutoLaunch(),
+          disabled = not canUseAutoLaunch(),
+          fn = function()
+            if setAutoLaunch(not getAutoLaunch()) then
+              hs.printf("Hammerspoon auto launch: %s", getAutoLaunch() and "ON" or "OFF")
+              updateMenuBar()
+            end
+          end,
+        },
+      }
+    end)
+  end
 
   updateMenuBar()
 end

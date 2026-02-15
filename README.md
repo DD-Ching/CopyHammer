@@ -21,7 +21,9 @@ brew install --cask hammerspoon
 - Persist to `~/.hammerspoon/clipboard.json`
 - Load persisted history on startup
 - Auto-clear when total chars exceed `maxChars`
-- Menubar usage indicator (`CB <chars>/<items>`)
+- Menubar file-size indicator (`B/KB/MB/GB`) for `~/.hammerspoon/clipboard.json`
+- Click the size indicator to open clipboard chooser (same as `cmd + shift + v`)
+- Extra `OPT` menubar item for settings/actions
 - One-item delete mode
 - Clear-all action
 - Copy-all action (merge all history entries)
