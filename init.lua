@@ -223,7 +223,7 @@ local modifierLikeKeyNames = {
   option = true,
   rightoption = true,
   leftoption = true,
-  function = true,
+  ["function"] = true,
   fn = true,
 }
 
