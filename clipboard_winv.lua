@@ -51,6 +51,7 @@ local activeHelpAlertId
 local statusPanel
 local screenWatcher
 local updateStatusPanel
+local hideAllChoosers
 
 -- Sum of characters across stored entries (approx memory usage)
 local function totalChars()
@@ -130,8 +131,48 @@ local function statusPanelText()
   }, "\n")
 end
 
+-- Keep panel in sync with the active chooser window (show/hide together)
+local uiVisible = false
+local uiHideTimer
+local function setUIVisible(visible)
+  if uiHideTimer then
+    uiHideTimer:stop()
+    uiHideTimer = nil
+  end
+
+  if visible then
+    uiVisible = true
+    if updateStatusPanel then
+      updateStatusPanel()
+    end
+    return
+  end
+
+  -- Small debounce to prevent flicker when switching choosers (actions -> hotkeys, etc.)
+  uiHideTimer = hs.timer.doAfter(0.08, function()
+    uiVisible = false
+    uiHideTimer = nil
+    if updateStatusPanel then
+      updateStatusPanel()
+    end
+  end)
+end
+
+hideAllChoosers = function()
+  if chooser then
+    chooser:hide()
+  end
+  if actionChooser then
+    actionChooser:hide()
+  end
+  if hotkeyChooser then
+    hotkeyChooser:hide()
+  end
+  setUIVisible(false)
+end
+
 local function ensureStatusPanel()
-  if not config.showStatusPanel then
+  if not config.showStatusPanel or not uiVisible then
     if statusPanel then
       statusPanel:hide()
     end
@@ -152,9 +193,11 @@ local function ensureStatusPanel()
     if statusPanel.mouseCallback then
       statusPanel:mouseCallback(function(_, msg)
         if msg == "mouseUp" then
-          config.showStatusPanel = false
-          if updateStatusPanel then
-            updateStatusPanel()
+          -- Click the panel to dismiss the whole UI (chooser + panel)
+          if hideAllChoosers then
+            hideAllChoosers()
+          else
+            setUIVisible(false)
           end
         end
       end)
@@ -621,6 +664,7 @@ end
 local function openChooser(mode)
   if not chooser then
     chooser = hs.chooser.new(function(choice)
+      setUIVisible(false)
       if not choice then
         return
       end
@@ -660,6 +704,7 @@ local function openChooser(mode)
   local placeholder = chooserMode == "delete" and "Delete mode: pick an item to remove" or "Clipboard history"
   chooser:placeholderText(placeholder)
   chooser:choices(choices)
+  setUIVisible(true)
   chooser:show(chooserPoint(config.chooserWidth))
   printMemoryUsage()
 end
@@ -677,6 +722,7 @@ end
 local function showActionChooser()
   if not actionChooser then
     actionChooser = hs.chooser.new(function(choice)
+      setUIVisible(false)
       if not choice then
         return
       end
@@ -704,6 +750,7 @@ local function showActionChooser()
     { text = "Delete One Item...", subText = "Open delete mode and pick one", action = "delete_mode" },
     { text = "Configure Hotkeys...", subText = "Open hotkey settings window", action = "open_hotkeys" },
   })
+  setUIVisible(true)
   actionChooser:show(chooserPoint(config.chooserWidth))
   showUsageHint("actions")
 end
@@ -805,6 +852,7 @@ end
 showHotkeyChooser = function()
   if not hotkeyChooser then
     hotkeyChooser = hs.chooser.new(function(choice)
+      setUIVisible(false)
       if not choice then
         return
       end
@@ -836,6 +884,7 @@ showHotkeyChooser = function()
 
   hotkeyChooser:placeholderText("Hotkey settings")
   hotkeyChooser:choices(choices)
+  setUIVisible(true)
   hotkeyChooser:show(chooserPoint(config.chooserWidth))
   showUsageHint("hotkeys")
 end
@@ -1022,17 +1071,9 @@ local function setupMenubar()
       return
     end
 
-    if config.showStatusPanel then
-      config.showStatusPanel = false
-      if updateStatusPanel then
-        updateStatusPanel()
-      end
+    if uiVisible then
+      hideAllChoosers()
       return
-    end
-
-    config.showStatusPanel = true
-    if updateStatusPanel then
-      updateStatusPanel()
     end
     showChooser()
   end)

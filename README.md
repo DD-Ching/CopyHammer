@@ -28,7 +28,8 @@ brew install --cask hammerspoon
 - Separate **Actions window** (not mixed into clipboard item rows)
 - Separate **Hotkey settings window** (press combo to record, persisted)
 - Persistent **Status Panel** in right corner (always visible, non-disappearing)
-- Click the status panel to hide it
+- Status panel is synced with the chooser (show/hide together)
+- Click the status panel to dismiss the whole UI
 - Auto-fallback if hotkey settings are invalid
 - Hotkey duplicate prevention
 - One-item delete mode
