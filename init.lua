@@ -40,7 +40,7 @@ local lastChangeCount = hs.pasteboard.changeCount()
 local lastFocusedApp
 local chooserMode = "paste"
 local menubar
-local menuButton
+local optionsMenu
 local updateMenuBar
 local hotkeys = {}
 local boundHotkeys = {}
@@ -859,7 +859,7 @@ updateMenuBar = function()
   if not menubar then
     return
   end
-  menubar:setTitle(formatBytes(historyFileSize()))
+  menubar:setTitle(string.format("OPT %s", formatBytes(historyFileSize())))
 end
 
 updateStatusPanel = function()
@@ -877,19 +877,9 @@ local function setupMenubar()
     return
   end
 
-  menubar:setTooltip("Clipboard history (click to open)")
-  menubar:setClickCallback(showChooser)
-
-  menuButton = hs.menubar.new()
-  if menuButton then
-    menuButton:setTitle("OPT")
-    menuButton:setTooltip("Options (click to show panel + settings)")
-    menuButton:setMenu(function()
-      -- Clicking OPT should always bring the persistent status panel back.
-      config.showStatusPanel = true
-      if updateStatusPanel then
-        updateStatusPanel()
-      end
+  optionsMenu = hs.menubar.new(false)
+  if optionsMenu then
+    optionsMenu:setMenu(function()
       return {
         { title = string.format("File: %s", formatBytes(historyFileSize())), disabled = true },
         { title = string.format("Memory: %d chars (~%s)", totalChars(), formatChars(totalChars())), disabled = true },
@@ -975,6 +965,33 @@ local function setupMenubar()
       }
     end)
   end
+
+  menubar:setTooltip("CopyHammer: click to show chooser+panel, click again to hide panel. Option-click for menu.")
+  menubar:setClickCallback(function(mods)
+    if mods and mods.alt and optionsMenu then
+      local f = menubar:frame()
+      if f then
+        optionsMenu:popupMenu({ x = f.x, y = f.y + f.h })
+      else
+        optionsMenu:popupMenu(hs.mouse.absolutePosition())
+      end
+      return
+    end
+
+    if config.showStatusPanel then
+      config.showStatusPanel = false
+      if updateStatusPanel then
+        updateStatusPanel()
+      end
+      return
+    end
+
+    config.showStatusPanel = true
+    if updateStatusPanel then
+      updateStatusPanel()
+    end
+    showChooser()
+  end)
 
   updateMenuBar()
 end

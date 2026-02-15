@@ -21,8 +21,9 @@ brew install --cask hammerspoon
 - Persist to `~/.hammerspoon/clipboard.json`
 - Load persisted history on startup
 - Auto-clear when total chars exceed `maxChars`
-- Menubar file-size indicator (`B/KB/MB/GB`) for `~/.hammerspoon/clipboard.json`
-- Click size indicator to open clipboard chooser
+- Single menubar button: `OPT <size>` (shows file size `B/KB/MB/GB` for `~/.hammerspoon/clipboard.json`)
+- Click menubar button: show chooser + status panel (click again: hide panel)
+- Option-click menubar button: open menu
 - Chooser opens near top-right corner
 - Separate **Actions window** (not mixed into clipboard item rows)
 - Separate **Hotkey settings window** (press combo to record, persisted)
@@ -74,7 +75,7 @@ Then open Hammerspoon and click `Reload Config`.
 
 ## Auto Launch at Login
 
-Use the `OPT` menubar item -> `Launch Hammerspoon at Login`.
+Option-click the menubar button -> `Launch Hammerspoon at Login`.
 
 ## Hotkey Customization
 
@@ -93,12 +94,12 @@ Custom hotkeys are stored at:
 
 If hotkeys become confusing:
 
-- Use `OPT` menu -> `Reset Hotkeys to Default`
+- Use the menubar menu -> `Reset Hotkeys to Default`
 - Or run in Hammerspoon console: `resetClipboardHotkeys()`
 
 ## Help Overlay
 
-`OPT` menu includes:
+Menubar menu includes:
 
 - `Help Overlay (Top)`
 - `Help Overlay (Bottom)`
@@ -106,13 +107,13 @@ If hotkeys become confusing:
 
 ## Persistent Status Panel
 
-`OPT` menu includes:
+Menubar menu includes:
 
 - `Status Panel (Bottom Right)`
 - `Status Panel (Top Right)`
 - `Hide Status Panel`
 
-`OPT` means **Options**. Clicking `OPT` will also force-show the status panel.
+`OPT` means **Options**.
 
 Console helper:
 
