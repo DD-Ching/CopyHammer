@@ -28,6 +28,7 @@ brew install --cask hammerspoon
 - Separate **Actions window** (not mixed into clipboard item rows)
 - Separate **Hotkey settings window** (press combo to record, persisted)
 - Persistent **Status Panel** in right corner (always visible, non-disappearing)
+- Click the status panel to hide it
 - Auto-fallback if hotkey settings are invalid
 - Hotkey duplicate prevention
 - One-item delete mode
@@ -91,6 +92,10 @@ cmd+alt+v
 Custom hotkeys are stored at:
 
 - `~/.hammerspoon/clipboard_hotkeys.json`
+
+Notes:
+
+- `cmd + shift + v` is always reserved for **History** (fixed). Even if you change `openHistory`, `cmd + shift + v` still works.
 
 If hotkeys become confusing:
 

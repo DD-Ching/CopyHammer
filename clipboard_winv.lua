@@ -111,12 +111,16 @@ local function statusPanelFrame()
 end
 
 local function statusPanelText()
+  local historyHotkey = defaultHotkeys.openHistory .. " (fixed)"
+  if hotkeys.openHistory and hotkeys.openHistory ~= defaultHotkeys.openHistory then
+    historyHotkey = historyHotkey .. " / " .. hotkeys.openHistory
+  end
   return table.concat({
     "CopyHammer",
     string.format("History: %d items | %s file | %d chars", #history, formatBytes(historyFileSize()), totalChars()),
     "",
     "Current Hotkeys",
-    string.format("History: %s", hotkeys.openHistory or "-"),
+    string.format("History: %s", historyHotkey),
     string.format("Actions: %s", hotkeys.openActions or "-"),
     string.format("Delete One: %s", hotkeys.deleteMode or "-"),
     string.format("Copy All: %s", hotkeys.copyAll or "-"),
@@ -139,6 +143,22 @@ local function ensureStatusPanel()
     statusPanel = hs.canvas.new(frame)
     statusPanel:level(hs.canvas.windowLevels.floating)
     statusPanel:behaviorAsLabels({ "canJoinAllSpaces", "stationary" })
+    if statusPanel.canvasMouseEvents then
+      statusPanel:canvasMouseEvents(false, false, true, false) -- down/up only
+    end
+    if statusPanel.clickActivating then
+      statusPanel:clickActivating(false)
+    end
+    if statusPanel.mouseCallback then
+      statusPanel:mouseCallback(function(_, msg)
+        if msg == "mouseUp" then
+          config.showStatusPanel = false
+          if updateStatusPanel then
+            updateStatusPanel()
+          end
+        end
+      end)
+    end
     statusPanel[1] = {
       type = "rectangle",
       action = "fill",
@@ -203,7 +223,7 @@ local function showUsageHint(context)
   if context == "history" then
     showHelpOverlay(string.format(
       "History: %s  |  Actions: %s  |  Hotkeys: %s",
-      hotkeys.openHistory,
+      defaultHotkeys.openHistory,
       hotkeys.openActions,
       hotkeys.hotkeyConfig
     ))
@@ -382,6 +402,7 @@ end
 local function sanitizeHotkeys()
   local used = {}
   local changed = false
+  local _, _, _, reservedHistory = parseHotkeySpec(defaultHotkeys.openHistory)
 
   for actionId, defaultSpec in pairs(defaultHotkeys) do
     local current = hotkeys[actionId]
@@ -393,6 +414,11 @@ local function sanitizeHotkeys()
       changed = true
     else
       hotkeys[actionId] = normalized
+    end
+
+    if actionId ~= "openHistory" and hotkeys[actionId] == reservedHistory then
+      hotkeys[actionId] = defaultSpec
+      changed = true
     end
 
     local owner = used[hotkeys[actionId]]
@@ -683,7 +709,7 @@ local function showActionChooser()
 end
 
 local hotkeyMeta = {
-  { id = "openHistory", title = "Open History", help = "Show clipboard list" },
+  { id = "openHistory", title = "Open History (Extra)", help = "Extra hotkey (cmd+shift+v is always available)" },
   { id = "openActions", title = "Open Actions Window", help = "Show action window" },
   { id = "deleteMode", title = "Delete One Mode", help = "Open delete chooser" },
   { id = "copyAll", title = "Copy All Items", help = "Copy all saved entries" },
@@ -740,6 +766,12 @@ local function startHotkeyCapture(actionId)
     local _, _, err, normalized = parseHotkeySpec(spec)
     if err then
       hs.alert.show("Invalid hotkey: " .. err, { atScreenEdge = config.helpOverlayEdge, textSize = 12 }, hs.screen.mainScreen(), 1.2)
+      return true
+    end
+
+    local _, _, _, reservedHistory = parseHotkeySpec(defaultHotkeys.openHistory)
+    if actionId ~= "openHistory" and normalized == reservedHistory then
+      hs.alert.show("Reserved for History: " .. reservedHistory, { atScreenEdge = config.helpOverlayEdge, textSize = 12 }, hs.screen.mainScreen(), 1.2)
       return true
     end
 
@@ -825,6 +857,8 @@ bindHotkeys = function()
     saveHotkeys()
   end
 
+  local _, _, _, reservedHistory = parseHotkeySpec(defaultHotkeys.openHistory)
+
   for _, h in pairs(boundHotkeys) do
     h:delete()
   end
@@ -842,12 +876,22 @@ bindHotkeys = function()
     end
   end
 
+  local reservedIsBound = false
+  for _, spec in pairs(hotkeys) do
+    if spec == reservedHistory then
+      reservedIsBound = true
+      break
+    end
+  end
+  if not reservedIsBound then
+    local mods, key = parseHotkeySpec(reservedHistory)
+    boundHotkeys.primaryHistory = hs.hotkey.bind(mods, key, showChooser)
+  end
   if not boundHotkeys.openHistory then
-    local mods, key = parseHotkeySpec(defaultHotkeys.openHistory)
-    boundHotkeys.openHistory = hs.hotkey.bind(mods, key, showChooser)
+    -- As long as history has a hotkey bound, we are fine (cmd+shift+v is always active as "fixed").
     hotkeys.openHistory = defaultHotkeys.openHistory
     saveHotkeys()
-    hs.printf("Clipboard history: restored emergency history hotkey %s", defaultHotkeys.openHistory)
+    hs.printf("Clipboard history: restored openHistory to default %s", defaultHotkeys.openHistory)
   end
 
   if updateStatusPanel then
@@ -885,7 +929,7 @@ local function setupMenubar()
         { title = string.format("Memory: %d chars (~%s)", totalChars(), formatChars(totalChars())), disabled = true },
         { title = string.format("Items: %d/%d", #history, config.maxItems), disabled = true },
         { title = "-" },
-        { title = string.format("Open History (%s)", hotkeys.openHistory), fn = showChooser },
+        { title = string.format("Open History (%s)", defaultHotkeys.openHistory), fn = showChooser },
         { title = string.format("Open Actions Window (%s)", hotkeys.openActions), fn = showActionChooser },
         { title = string.format("Hotkey Settings (%s)", hotkeys.hotkeyConfig), fn = showHotkeyChooser },
         { title = "Reset Hotkeys to Default", fn = resetHotkeysToDefault },
@@ -1029,8 +1073,8 @@ startClipboardMonitor()
 bindHotkeys()
 
 hs.printf(
-  "Clipboard history ready. Hotkeys: %s (history), %s (actions), %s (hotkey settings), %s (toggle panel)",
-  hotkeys.openHistory,
+  "Clipboard history ready. Hotkeys: %s (history, fixed), %s (actions), %s (hotkey settings), %s (toggle panel)",
+  defaultHotkeys.openHistory,
   hotkeys.openActions,
   hotkeys.hotkeyConfig,
   hotkeys.togglePanel
