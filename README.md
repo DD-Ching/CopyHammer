@@ -112,6 +112,8 @@ If hotkeys become confusing:
 - `Status Panel (Top Right)`
 - `Hide Status Panel`
 
+`OPT` means **Options**. Clicking `OPT` will also force-show the status panel.
+
 Console helper:
 
 ```lua

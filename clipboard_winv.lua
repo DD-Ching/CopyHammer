@@ -883,8 +883,13 @@ local function setupMenubar()
   menuButton = hs.menubar.new()
   if menuButton then
     menuButton:setTitle("OPT")
-    menuButton:setTooltip("Clipboard settings")
+    menuButton:setTooltip("Options (click to show panel + settings)")
     menuButton:setMenu(function()
+      -- Clicking OPT should always bring the persistent status panel back.
+      config.showStatusPanel = true
+      if updateStatusPanel then
+        updateStatusPanel()
+      end
       return {
         { title = string.format("File: %s", formatBytes(historyFileSize())), disabled = true },
         { title = string.format("Memory: %d chars (~%s)", totalChars(), formatChars(totalChars())), disabled = true },
