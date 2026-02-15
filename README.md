@@ -22,22 +22,23 @@ brew install --cask hammerspoon
 - Load persisted history on startup
 - Auto-clear when total chars exceed `maxChars`
 - Menubar file-size indicator (`B/KB/MB/GB`) for `~/.hammerspoon/clipboard.json`
-- Click the size indicator to open clipboard chooser (same as `cmd + shift + v`)
-- Extra `OPT` menubar item for settings/actions
+- Click size indicator to open clipboard chooser
+- Chooser opens near top-right corner
+- Separate **Actions window** (not mixed into clipboard item rows)
+- Separate **Hotkey settings window** (custom hotkeys, persisted)
 - One-item delete mode
 - Clear-all action
-- Copy-all action (merge all history entries)
+- Copy-all action
 - Optional auto-paste after selecting an item
 
-## Hotkeys
+## Default Hotkeys
 
-- `cmd + shift + v`: Open clipboard chooser
+- `cmd + shift + v`: Open clipboard history
+- `cmd + shift + a`: Open actions window
 - `cmd + ctrl + shift + v`: Delete-one-item mode
 - `cmd + ctrl + shift + c`: Copy all history items
 - `cmd + shift + delete`: Clear all history
-
-Chooser top action rows are disabled by default (for a cleaner list-only view).
-If needed, set `showChooserActions = true` in config.
+- `cmd + shift + k`: Open hotkey settings window
 
 ## Install
 
@@ -68,7 +69,21 @@ Then open Hammerspoon and click `Reload Config`.
 
 ## Auto Launch at Login
 
-Use the menubar item `Launch Hammerspoon at Login`.
+Use the `OPT` menubar item -> `Launch Hammerspoon at Login`.
+
+## Hotkey Customization
+
+Open hotkey settings window (`cmd + shift + k`) and enter keys in format:
+
+```text
+cmd+shift+v
+cmd+ctrl+shift+c
+alt+v
+```
+
+Custom hotkeys are stored at:
+
+- `~/.hammerspoon/clipboard_hotkeys.json`
 
 ## Manual Console Commands
 
@@ -91,4 +106,7 @@ Edit `~/.hammerspoon/clipboard_winv.lua`:
 - `pollInterval`
 - `autoPasteOnSelect`
 - `showMenubarUsage`
-- `showChooserActions`
+- `chooserWidth`
+- `chooserRows`
+- `chooserMargin`
+

@@ -7,18 +7,36 @@ local config = {
   previewChars = 80,
   autoPasteOnSelect = true,
   showMenubarUsage = true,
-  showChooserActions = false,
+  chooserWidth = 42,
+  chooserRows = 12,
+  chooserMargin = 16,
   historyFile = os.getenv("HOME") .. "/.hammerspoon/clipboard.json",
+  hotkeyFile = os.getenv("HOME") .. "/.hammerspoon/clipboard_hotkeys.json",
+}
+
+local defaultHotkeys = {
+  openHistory = "cmd+shift+v",
+  openActions = "cmd+shift+a",
+  deleteMode = "cmd+ctrl+shift+v",
+  copyAll = "cmd+ctrl+shift+c",
+  clearAll = "cmd+shift+delete",
+  hotkeyConfig = "cmd+shift+k",
 }
 
 local history = {}
 local chooser
+local actionChooser
+local hotkeyChooser
 local lastChangeCount = hs.pasteboard.changeCount()
 local lastFocusedApp
 local chooserMode = "paste"
 local menubar
 local menuButton
 local updateMenuBar
+local hotkeys = {}
+local boundHotkeys = {}
+local bindHotkeys
+local showHotkeyChooser
 
 -- Sum of characters across stored entries (approx memory usage)
 local function totalChars()
@@ -64,6 +82,14 @@ local function historyFileSize()
   return 0
 end
 
+local function chooserPoint(widthPercent)
+  local screenFrame = hs.screen.mainScreen():frame()
+  local width = math.floor(screenFrame.w * (widthPercent / 100))
+  local x = screenFrame.x + screenFrame.w - width - config.chooserMargin
+  local y = screenFrame.y + config.chooserMargin
+  return { x = x, y = y }
+end
+
 local function canUseAutoLaunch()
   return hs.autoLaunch and hs.autoLaunch.get and hs.autoLaunch.set
 end
@@ -100,6 +126,105 @@ local function saveHistory()
 
   f:write(encoded)
   f:close()
+end
+
+local function saveHotkeys()
+  local encoded = hs.json.encode(hotkeys)
+  if not encoded then
+    hs.printf("Clipboard history: failed to encode hotkeys JSON")
+    return
+  end
+
+  local f, err = io.open(config.hotkeyFile, "w")
+  if not f then
+    hs.printf("Clipboard history: failed to save hotkeys (%s)", err or "unknown error")
+    return
+  end
+
+  f:write(encoded)
+  f:close()
+end
+
+local modOrder = { "cmd", "ctrl", "alt", "shift", "fn" }
+local modAlias = {
+  command = "cmd",
+  option = "alt",
+  control = "ctrl",
+  ctl = "ctrl",
+}
+
+local function parseHotkeySpec(spec)
+  if type(spec) ~= "string" then
+    return nil, nil, "must be a string"
+  end
+
+  local s = spec:lower():gsub("%s+", "")
+  if s == "" then
+    return nil, nil, "empty hotkey"
+  end
+
+  local modSet = {}
+  local key
+
+  for part in s:gmatch("[^+]+") do
+    local token = modAlias[part] or part
+    if token == "cmd" or token == "ctrl" or token == "alt" or token == "shift" or token == "fn" then
+      modSet[token] = true
+    else
+      if key then
+        return nil, nil, "only one key is allowed"
+      end
+      key = token
+    end
+  end
+
+  if not key then
+    return nil, nil, "missing key"
+  end
+
+  local mods = {}
+  for _, m in ipairs(modOrder) do
+    if modSet[m] then
+      table.insert(mods, m)
+    end
+  end
+
+  local parts = {}
+  for _, m in ipairs(mods) do
+    table.insert(parts, m)
+  end
+  table.insert(parts, key)
+
+  return mods, key, nil, table.concat(parts, "+")
+end
+
+local function loadHotkeys()
+  hotkeys = {}
+  for k, v in pairs(defaultHotkeys) do
+    hotkeys[k] = v
+  end
+
+  local f = io.open(config.hotkeyFile, "r")
+  if not f then
+    return
+  end
+
+  local raw = f:read("*a")
+  f:close()
+
+  local decoded = hs.json.decode(raw)
+  if type(decoded) ~= "table" then
+    return
+  end
+
+  for action, value in pairs(decoded) do
+    if type(value) == "string" and defaultHotkeys[action] then
+      local _, _, err, normalized = parseHotkeySpec(value)
+      if not err then
+        hotkeys[action] = normalized
+      end
+    end
+  end
 end
 
 -- Manual clear function (also exposed globally for console use)
@@ -142,6 +267,7 @@ end
 -- Exposed helpers in Hammerspoon console:
 --   clearClipboardHistory()
 --   showClipboardMemoryUsage()
+--   copyAllClipboardHistory()
 _G.clearClipboardHistory = clearHistory
 _G.showClipboardMemoryUsage = printMemoryUsage
 _G.copyAllClipboardHistory = copyAllHistory
@@ -232,20 +358,7 @@ local function openChooser(mode)
       if not choice then
         return
       end
-      if choice.action == "copy_all" then
-        copyAllHistory()
-        return
-      end
-      if choice.action == "clear_all" then
-        clearHistory("manual clear from chooser")
-        return
-      end
-      if choice.action == "delete_mode" then
-        hs.timer.doAfter(0.01, function()
-          openChooser("delete")
-        end)
-        return
-      end
+
       if chooserMode == "delete" then
         removeOneItem(choice.full)
         return
@@ -262,29 +375,14 @@ local function openChooser(mode)
       end
     end)
     chooser:searchSubText(true)
+    chooser:width(config.chooserWidth)
+    chooser:rows(config.chooserRows)
   end
 
   chooserMode = mode or "paste"
   lastFocusedApp = hs.application.frontmostApplication()
 
   local choices = {}
-  if chooserMode == "paste" and config.showChooserActions then
-    table.insert(choices, {
-      text = "Copy All Items",
-      subText = "Copy whole history into clipboard (newline-separated)",
-      action = "copy_all",
-    })
-    table.insert(choices, {
-      text = "Clear All Items",
-      subText = "Delete every history item",
-      action = "clear_all",
-    })
-    table.insert(choices, {
-      text = "Delete One Item...",
-      subText = "Open delete mode and pick an item",
-      action = "delete_mode",
-    })
-  end
   for i, item in ipairs(history) do
     table.insert(choices, {
       text = preview(item),
@@ -296,7 +394,7 @@ local function openChooser(mode)
   local placeholder = chooserMode == "delete" and "Delete mode: pick an item to remove" or "Clipboard history"
   chooser:placeholderText(placeholder)
   chooser:choices(choices)
-  chooser:show()
+  chooser:show(chooserPoint(config.chooserWidth))
   printMemoryUsage()
 end
 
@@ -306,6 +404,149 @@ end
 
 local function showDeleteChooser()
   openChooser("delete")
+end
+
+local function showActionChooser()
+  if not actionChooser then
+    actionChooser = hs.chooser.new(function(choice)
+      if not choice then
+        return
+      end
+      if choice.action == "copy_all" then
+        copyAllHistory()
+      elseif choice.action == "clear_all" then
+        clearHistory("manual clear from action window")
+      elseif choice.action == "delete_mode" then
+        showDeleteChooser()
+      elseif choice.action == "open_history" then
+        showChooser()
+      elseif choice.action == "open_hotkeys" then
+        showHotkeyChooser()
+      end
+    end)
+    actionChooser:width(config.chooserWidth)
+    actionChooser:rows(8)
+  end
+
+  actionChooser:placeholderText("Clipboard actions")
+  actionChooser:choices({
+    { text = "Open Clipboard History", subText = "Show copied items list", action = "open_history" },
+    { text = "Copy All Items", subText = "Copy whole history into clipboard (newline-separated)", action = "copy_all" },
+    { text = "Clear All Items", subText = "Delete every history item", action = "clear_all" },
+    { text = "Delete One Item...", subText = "Open delete mode and pick one", action = "delete_mode" },
+    { text = "Configure Hotkeys...", subText = "Open hotkey settings window", action = "open_hotkeys" },
+  })
+  actionChooser:show(chooserPoint(config.chooserWidth))
+end
+
+local hotkeyMeta = {
+  { id = "openHistory", title = "Open History", help = "Show clipboard list" },
+  { id = "openActions", title = "Open Actions Window", help = "Show action window" },
+  { id = "deleteMode", title = "Delete One Mode", help = "Open delete chooser" },
+  { id = "copyAll", title = "Copy All Items", help = "Copy all saved entries" },
+  { id = "clearAll", title = "Clear All Items", help = "Clear whole history" },
+  { id = "hotkeyConfig", title = "Hotkey Settings", help = "Open hotkey config" },
+}
+
+local function findHotkeyMeta(id)
+  for _, item in ipairs(hotkeyMeta) do
+    if item.id == id then
+      return item
+    end
+  end
+  return nil
+end
+
+showHotkeyChooser = function()
+  if not hotkeyChooser then
+    hotkeyChooser = hs.chooser.new(function(choice)
+      if not choice then
+        return
+      end
+
+      if choice.action == "restore_defaults" then
+        for k, v in pairs(defaultHotkeys) do
+          hotkeys[k] = v
+        end
+        saveHotkeys()
+        bindHotkeys()
+        hs.alert.show("Hotkeys restored")
+      else
+        local meta = findHotkeyMeta(choice.id)
+        if not meta then
+          return
+        end
+        local button, value = hs.dialog.textPrompt(
+          "Set Hotkey",
+          string.format("%s\nFormat: cmd+shift+v", meta.title),
+          hotkeys[choice.id],
+          "Save",
+          "Cancel"
+        )
+        if button == "Save" then
+          local _, _, err, normalized = parseHotkeySpec(value)
+          if err then
+            hs.alert.show("Invalid hotkey: " .. err)
+          else
+            hotkeys[choice.id] = normalized
+            saveHotkeys()
+            bindHotkeys()
+            hs.alert.show(meta.title .. ": " .. normalized)
+          end
+        end
+      end
+
+      hs.timer.doAfter(0.03, showHotkeyChooser)
+    end)
+    hotkeyChooser:width(config.chooserWidth)
+    hotkeyChooser:rows(10)
+  end
+
+  local choices = {}
+  for _, item in ipairs(hotkeyMeta) do
+    table.insert(choices, {
+      text = item.title,
+      subText = string.format("Current: %s  |  %s", hotkeys[item.id], item.help),
+      id = item.id,
+    })
+  end
+  table.insert(choices, {
+    text = "Restore Default Hotkeys",
+    subText = "Reset all hotkeys to original values",
+    action = "restore_defaults",
+  })
+
+  hotkeyChooser:placeholderText("Hotkey settings")
+  hotkeyChooser:choices(choices)
+  hotkeyChooser:show(chooserPoint(config.chooserWidth))
+end
+
+local actionHandlers = {
+  openHistory = showChooser,
+  openActions = showActionChooser,
+  deleteMode = showDeleteChooser,
+  copyAll = copyAllHistory,
+  clearAll = function() clearHistory("manual clear hotkey") end,
+  hotkeyConfig = showHotkeyChooser,
+}
+
+bindHotkeys = function()
+  for _, h in pairs(boundHotkeys) do
+    h:delete()
+  end
+  boundHotkeys = {}
+
+  for action, spec in pairs(hotkeys) do
+    local fn = actionHandlers[action]
+    if fn then
+      local mods, key, err = parseHotkeySpec(spec)
+      if err then
+        hs.printf("Clipboard history: invalid hotkey for %s (%s)", action, err)
+      else
+        boundHotkeys[action] = hs.hotkey.bind(mods, key, fn)
+      end
+    end
+  end
 end
 
 updateMenuBar = function()
@@ -319,6 +560,7 @@ local function setupMenubar()
   if not config.showMenubarUsage then
     return
   end
+
   menubar = hs.menubar.new()
   if not menubar then
     hs.printf("Clipboard history: failed to create menubar item")
@@ -338,10 +580,13 @@ local function setupMenubar()
         { title = string.format("Memory: %d chars (~%s)", totalChars(), formatChars(totalChars())), disabled = true },
         { title = string.format("Items: %d/%d", #history, config.maxItems), disabled = true },
         { title = "-" },
-        { title = "Open History (cmd+shift+v)", fn = showChooser },
-        { title = "Delete One Item (cmd+ctrl+shift+v)", fn = showDeleteChooser },
-        { title = "Copy All Items (cmd+ctrl+shift+c)", fn = copyAllHistory },
-        { title = "Clear All (cmd+shift+delete)", fn = function() clearHistory("manual clear") end },
+        { title = string.format("Open History (%s)", hotkeys.openHistory), fn = showChooser },
+        { title = string.format("Open Actions Window (%s)", hotkeys.openActions), fn = showActionChooser },
+        { title = string.format("Hotkey Settings (%s)", hotkeys.hotkeyConfig), fn = showHotkeyChooser },
+        { title = "-" },
+        { title = string.format("Delete One Item (%s)", hotkeys.deleteMode), fn = showDeleteChooser },
+        { title = string.format("Copy All Items (%s)", hotkeys.copyAll), fn = copyAllHistory },
+        { title = string.format("Clear All (%s)", hotkeys.clearAll), fn = function() clearHistory("manual clear") end },
         { title = "-" },
         {
           title = "Launch Hammerspoon at Login",
@@ -375,12 +620,15 @@ local function startClipboardMonitor()
 end
 
 loadHistory()
+loadHotkeys()
 setupMenubar()
 startClipboardMonitor()
-hs.hotkey.bind({"cmd", "shift"}, "v", showChooser)
-hs.hotkey.bind({"cmd", "ctrl", "shift"}, "v", showDeleteChooser)
-hs.hotkey.bind({"cmd", "ctrl", "shift"}, "c", copyAllHistory)
-hs.hotkey.bind({"cmd", "shift"}, "delete", function() clearHistory("manual clear hotkey") end)
+bindHotkeys()
 
-hs.printf("Clipboard history ready. Hotkeys: cmd+shift+v (open), cmd+ctrl+shift+v (delete mode), cmd+ctrl+shift+c (copy all), cmd+shift+delete (clear all)")
+hs.printf(
+  "Clipboard history ready. Hotkeys: %s (history), %s (actions), %s (hotkey settings)",
+  hotkeys.openHistory,
+  hotkeys.openActions,
+  hotkeys.hotkeyConfig
+)
 printMemoryUsage()
