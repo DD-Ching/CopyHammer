@@ -40,6 +40,11 @@ This script:
 
 Then open Hammerspoon and click `Reload Config`.
 
+Project structure (refactored):
+
+- `init.lua`: tiny bootstrap loader
+- `clipboard_winv.lua`: main CopyHammer logic
+
 ## Usage
 
 - `ctrl + shift + v`: open clipboard history (Win+V equivalent)

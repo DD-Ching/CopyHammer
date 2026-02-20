@@ -2,6 +2,10 @@
 -- Win+V-style clipboard history for macOS using only Hammerspoon.
 -- Note: Text-only history (non-text clipboard items can't be stored/restored).
 
+if _G.__copyhammer_loaded then
+  return _G.__copyhammer_api
+end
+
 local config = {
   pollInterval = 0.5,
   maxItems = 200,
@@ -18,6 +22,8 @@ local chooser
 local chooserMode = "paste" -- paste | delete
 local lastFocusedApp
 local lastChangeCount = hs.pasteboard.changeCount()
+
+local api = {}
 
 local function totalChars()
   local n = 0
@@ -49,6 +55,16 @@ local function saveHistory()
   f:close()
 end
 
+local function enforceHistoryLimits()
+  while #history > config.maxItems do
+    table.remove(history)
+  end
+
+  while totalChars() > config.maxChars and #history > 0 do
+    table.remove(history)
+  end
+end
+
 local function loadHistory()
   local f = io.open(config.historyFile, "r")
   if not f then
@@ -71,13 +87,7 @@ local function loadHistory()
     end
   end
 
-  while #history > config.maxItems do
-    table.remove(history)
-  end
-
-  while totalChars() > config.maxChars and #history > 0 do
-    table.remove(history)
-  end
+  enforceHistoryLimits()
 end
 
 local function addToHistory(text)
@@ -94,13 +104,7 @@ local function addToHistory(text)
 
   table.insert(history, 1, text)
 
-  while #history > config.maxItems do
-    table.remove(history)
-  end
-
-  while totalChars() > config.maxChars and #history > 0 do
-    table.remove(history)
-  end
+  enforceHistoryLimits()
 
   saveHistory()
   return true
@@ -112,6 +116,9 @@ local function clearHistory(reason)
   hs.printf("CopyHammer: cleared%s", reason and (" (" .. reason .. ")") or "")
   printMemoryUsage()
 end
+
+api.clearHistory = clearHistory
+api.showMemoryUsage = printMemoryUsage
 
 local function removeOne(text)
   for i, item in ipairs(history) do
@@ -302,6 +309,8 @@ local function showHistory()
   end)
 end
 
+api.showHistory = showHistory
+
 local function startMonitor()
   hs.timer.doEvery(config.pollInterval, function()
     local c = hs.pasteboard.changeCount()
@@ -374,3 +383,7 @@ hs.hotkey.bind({ "ctrl", "shift" }, "v", showHistory)
 
 hs.printf("CopyHammer (Simple) ready. Hotkey: ctrl+shift+v")
 printMemoryUsage()
+
+_G.__copyhammer_loaded = true
+_G.__copyhammer_api = api
+return api
