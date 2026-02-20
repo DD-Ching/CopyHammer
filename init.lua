@@ -320,21 +320,49 @@ _G.showClipboardMemoryUsage = function()
 end
 
 local function enableAutoLaunchAtLogin()
-  if not (hs.autoLaunch and hs.autoLaunch.get and hs.autoLaunch.set) then
-    hs.printf("CopyHammer: hs.autoLaunch API not available in this Hammerspoon version")
+  local autoLaunchType = type(hs.autoLaunch)
+
+  -- Newer API shape: hs.autoLaunch([bool]) as a function.
+  if autoLaunchType == "function" then
+    local okGet, enabledOrErr = pcall(hs.autoLaunch)
+    if not okGet then
+      hs.printf("CopyHammer: failed to read autoLaunch state (%s)", tostring(enabledOrErr))
+      return
+    end
+    if enabledOrErr then
+      return
+    end
+
+    local okSet, err = pcall(hs.autoLaunch, true)
+    if okSet then
+      hs.printf("CopyHammer: enabled launch at login")
+    else
+      hs.printf("CopyHammer: failed to enable launch at login (%s)", tostring(err))
+    end
     return
   end
 
-  if hs.autoLaunch.get() then
+  -- Alternate API shape: hs.autoLaunch.get()/set().
+  if autoLaunchType == "table" and hs.autoLaunch.get and hs.autoLaunch.set then
+    local okGet, enabledOrErr = pcall(hs.autoLaunch.get)
+    if not okGet then
+      hs.printf("CopyHammer: failed to read autoLaunch state (%s)", tostring(enabledOrErr))
+      return
+    end
+    if enabledOrErr then
+      return
+    end
+
+    local okSet, err = pcall(hs.autoLaunch.set, true)
+    if okSet then
+      hs.printf("CopyHammer: enabled launch at login")
+    else
+      hs.printf("CopyHammer: failed to enable launch at login (%s)", tostring(err))
+    end
     return
   end
 
-  local ok, err = pcall(hs.autoLaunch.set, true)
-  if ok then
-    hs.printf("CopyHammer: enabled launch at login")
-  else
-    hs.printf("CopyHammer: failed to enable launch at login (%s)", tostring(err))
-  end
+  hs.printf("CopyHammer: hs.autoLaunch API not available in this Hammerspoon version")
 end
 
 loadHistory()
