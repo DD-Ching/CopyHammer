@@ -319,11 +319,30 @@ _G.showClipboardMemoryUsage = function()
   printMemoryUsage()
 end
 
+local function enableAutoLaunchAtLogin()
+  if not (hs.autoLaunch and hs.autoLaunch.get and hs.autoLaunch.set) then
+    hs.printf("CopyHammer: hs.autoLaunch API not available in this Hammerspoon version")
+    return
+  end
+
+  if hs.autoLaunch.get() then
+    return
+  end
+
+  local ok, err = pcall(hs.autoLaunch.set, true)
+  if ok then
+    hs.printf("CopyHammer: enabled launch at login")
+  else
+    hs.printf("CopyHammer: failed to enable launch at login (%s)", tostring(err))
+  end
+end
+
 loadHistory()
 startMonitor()
+enableAutoLaunchAtLogin()
 
 -- Main hotkey (Win+V equivalent)
-hs.hotkey.bind({ "cmd", "shift" }, "v", showHistory)
+hs.hotkey.bind({ "ctrl", "shift" }, "v", showHistory)
 
-hs.printf("CopyHammer (Simple) ready. Hotkey: cmd+shift+v")
+hs.printf("CopyHammer (Simple) ready. Hotkey: ctrl+shift+v")
 printMemoryUsage()

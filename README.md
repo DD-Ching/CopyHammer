@@ -4,7 +4,7 @@ A minimal Win+V-style clipboard history for macOS using only **Hammerspoon (Lua)
 
 This is intentionally simple:
 
-- One hotkey: `cmd + shift + v`
+- One hotkey: `ctrl + shift + v`
 - One list (Hammerspoon chooser)
 - Text-only clipboard history (no images/files)
 
@@ -42,7 +42,7 @@ Then open Hammerspoon and click `Reload Config`.
 
 ## Usage
 
-- `cmd + shift + v`: open clipboard history (Win+V equivalent)
+- `ctrl + shift + v`: open clipboard history (Win+V equivalent)
 
 The chooser shows:
 
